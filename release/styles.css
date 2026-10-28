@@ -1,0 +1,38 @@
+/* One quiet navigation line; additional paths only take space on request. */
+.threatback {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 3px 16px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  line-height: 1.5;
+}
+.threatback[hidden] { display: none !important; }
+.threatback-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.threatback a.internal-link { color: var(--text-muted); text-decoration: none; cursor: pointer; }
+.threatback a.internal-link:hover { color: var(--text-accent); text-decoration: underline; }
+.threatback a[aria-current] { color: var(--text-faint); }
+.threatback .threatback-toggle {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+.threatback .threatback-toggle:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.threatback a:focus-visible, .threatback button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 1px; }
+.threatback[data-expanded="true"] { display: block; max-height: 160px; overflow-y: auto; }
+.threatback[data-expanded="true"] .threatback-path { white-space: normal; overflow-wrap: anywhere; }
+.threatback-session { padding-bottom: 0; }
+.threatback-session .threatback-path { overflow-x: auto; text-overflow: clip; scrollbar-width: thin; }
