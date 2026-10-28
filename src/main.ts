@@ -1,4 +1,4 @@
-import { App, getLinkpath, MarkdownView, Plugin, PluginSettingTab, Setting, type SettingDefinitionControl, WorkspaceLeaf } from 'obsidian';
+import { App, getLinkpath, requireApiVersion, MarkdownView, Plugin, PluginSettingTab, Setting, type SettingDefinitionControl, WorkspaceLeaf } from 'obsidian';
 import { buildGraph, defaults, excluded, Graph, normalizeSettings, Result, Settings } from './graph';
 import { inferGraph, linkContext, LinkEvidence } from './inference';
 import { rankedPaths, rankingIndex } from './ranking';
@@ -406,7 +406,7 @@ class ThreatbackSettings extends PluginSettingTab {
 
     display() {
         // Newer hosts render/search definitions; older hosts keep the same controls.
-        if (typeof PluginSettingTab.prototype.getSettingDefinitions === 'function') {
+        if (requireApiVersion('1.13.0')) {
             super.display();
             return;
         }

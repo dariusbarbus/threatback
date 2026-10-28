@@ -1,6 +1,6 @@
 {
   "name": "threatback",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Navigation trails and inferred breadcrumb paths for Obsidian.",
   "scripts": {
