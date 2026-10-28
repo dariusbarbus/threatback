@@ -10,7 +10,7 @@
   font-size: var(--font-ui-smaller, 12px);
   line-height: 1.5;
 }
-.threatback[hidden] { display: none !important; }
+
 .threatback-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threatback a.internal-link { color: var(--text-muted); text-decoration: none; cursor: pointer; }
 .threatback a.internal-link:hover { color: var(--text-accent); text-decoration: underline; }
@@ -36,3 +36,6 @@
 .threatback[data-expanded="true"] .threatback-path { white-space: normal; overflow-wrap: anywhere; }
 .threatback-session { padding-bottom: 0; }
 .threatback-session .threatback-path { overflow-x: auto; text-overflow: clip; scrollbar-width: thin; }
+
+/* Keep hidden panels hidden even when an expanded panel has a display rule. */
+.view-content .threatback[hidden] { display: none; }

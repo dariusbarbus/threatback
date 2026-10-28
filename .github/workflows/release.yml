@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install package manager
+        run: npm install --global pnpm@11.25.0
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Validate version
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          if (!/^\d+\.\d+\.\d+$/.test(manifest.version) || manifest.version !== process.env.GITHUB_REF_NAME || pkg.version !== manifest.version) {
+            throw new Error('Tag, package version and manifest version must match exactly.');
+          }
+          JS
+      - name: Build release assets
+        run: pnpm run build
+      - name: Verify committed release assets match build
+        run: git diff --exit-code -- release/main.js release/manifest.json release/styles.css
+      - name: Attest release assets
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            release/main.js
+            release/manifest.json
+            release/styles.css
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            release/main.js release/manifest.json release/styles.css \
+            --verify-tag --title "Threatback $RELEASE_TAG" --generate-notes

@@ -59,3 +59,21 @@ The build checks TypeScript and writes the three installable files into `release
 ## License
 
 [MIT](LICENSE)
+
+## Release automation
+
+Push a version tag matching `manifest.json` and `package.json` (for example `0.7.0`, without `v`) after committing the rebuilt `release/` files. The GitHub Actions release workflow installs locked dependencies, rebuilds, verifies the committed assets match, generates GitHub artifact attestations for all three assets, and publishes the release. Do not create the same release manually before the workflow runs.
+
+```sh
+git tag 0.7.0
+git push origin 0.7.0
+```
+
+After the workflow succeeds, provenance can be verified with:
+
+```sh
+gh attestation verify release/main.js --repo dariusbarbus/threatback
+gh attestation verify release/styles.css --repo dariusbarbus/threatback
+```
+
+Attestations are created by GitHub Actions, not by a local build. Settings are searchable on Obsidian 1.13.0 or later; earlier supported versions retain the standard settings screen.

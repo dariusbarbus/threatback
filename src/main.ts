@@ -1,4 +1,4 @@
-import { App, getLinkpath, MarkdownView, Plugin, PluginSettingTab, Setting, WorkspaceLeaf } from 'obsidian';
+import { App, getLinkpath, MarkdownView, Plugin, PluginSettingTab, Setting, type SettingDefinitionControl, WorkspaceLeaf } from 'obsidian';
 import { buildGraph, defaults, excluded, Graph, normalizeSettings, Result, Settings } from './graph';
 import { inferGraph, linkContext, LinkEvidence } from './inference';
 import { rankedPaths, rankingIndex } from './ranking';
@@ -27,7 +27,7 @@ export default class Threatback extends Plugin {
     private ranking = rankingIndex(new Map());
     private panels = new Map<MarkdownView, Panel>();
     private results = new Map<string, Result>();
-    private timer: ReturnType<typeof setTimeout> | undefined;
+    private timer: number | undefined;
     private stopped = false;
     private generation = 0;
     async onload() {
@@ -53,8 +53,8 @@ export default class Threatback extends Plugin {
         if (this.stopped)
             return;
         this.generation++; // invalidate in-flight reads immediately
-        clearTimeout(this.timer);
-        this.timer = setTimeout(() => { void this.rebuild(); }, 120);
+        window.clearTimeout(this.timer);
+        this.timer = window.setTimeout(() => { void this.rebuild(); }, 120);
     }
     private async rebuild() {
         if (this.stopped)
@@ -68,7 +68,16 @@ export default class Threatback extends Plugin {
             return;
         }
         const folders = [...this.settings.excludedFolders];
-        const files = this.app.vault.getMarkdownFiles().filter(file => !excluded(file.path, folders));
+        // Only inspect notes already participating in Obsidian's resolved link cache.
+        const indexedPaths = new Set<string>();
+        for (const [source, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
+            indexedPaths.add(source);
+            for (const target of Object.keys(targets)) indexedPaths.add(target);
+        }
+        const files = [...indexedPaths]
+            .filter(path => !excluded(path, folders))
+            .map(path => this.app.vault.getFileByPath(path))
+            .filter((file): file is NonNullable<typeof file> => !!file && file.extension === 'md');
         const allowed = new Set(files.map(file => file.path));
         const rawGraph = buildGraph(this.app.metadataCache.resolvedLinks, allowed, folders);
         if (!this.settings.useHeuristics) {
@@ -143,8 +152,9 @@ export default class Threatback extends Plugin {
             live.add(view);
             let panel = this.panels.get(view);
             if (!panel) {
-                const element = view.contentEl.ownerDocument.createElement('nav');
-                const sessionElement = view.contentEl.ownerDocument.createElement('nav');
+                const element = view.contentEl.createEl('nav');
+                const sessionElement = view.contentEl.createEl('nav');
+                sessionElement.remove();
                 sessionElement.className = 'threatback threatback-session';
                 sessionElement.setAttribute('aria-label', 'Navigation trail');
                 element.className = 'threatback';
@@ -324,7 +334,7 @@ export default class Threatback extends Plugin {
     onunload() {
         this.stopped = true;
         this.generation++;
-        clearTimeout(this.timer);
+        window.clearTimeout(this.timer);
         for (const [view, panel] of this.panels)
             this.removePanel(view, panel);
         this.linkIntents.clear();
@@ -335,47 +345,83 @@ export default class Threatback extends Plugin {
 }
 class ThreatbackSettings extends PluginSettingTab {
     constructor(app: App, private plugin: Threatback) { super(app, plugin); }
+
+    getSettingDefinitions(): SettingDefinitionControl<keyof Settings>[] {
+        return [
+            {
+                name: 'Show navigation trail',
+                desc: 'Remember your route in each tab for this session. Clicking an earlier note trims the trail. Turning this off clears it.',
+                control: { type: 'toggle', key: 'showSessionTrail' }
+            },
+            {
+                name: 'Show inferred paths',
+                desc: 'Show paths calculated from note links. Turn off to use only your navigation trail; link analysis is paused.',
+                control: { type: 'toggle', key: 'showInferredPaths' }
+            },
+            {
+                name: 'Use local heuristics',
+                desc: 'Infer likely parents from link context. Turn off to follow all incoming links. Depth, exclusions and safety limits apply in both modes.',
+                control: { type: 'toggle', key: 'useHeuristics' }
+            },
+            {
+                name: 'Penalize reciprocal links',
+                desc: 'Prefer routes with fewer links that point both ways. Applies in both link modes.',
+                control: { type: 'toggle', key: 'penalizeReciprocal' }
+            },
+            {
+                name: 'Penalize detours',
+                desc: 'Prefer direct routes over longer routes with shortcut links. Applies in both link modes.',
+                control: { type: 'toggle', key: 'penalizeDetours' }
+            },
+            {
+                name: 'Rank likely overview notes',
+                desc: 'Favor starting notes with broad outward links. Suggested starts may have earlier links. Applies in both link modes.',
+                control: { type: 'toggle', key: 'rankOverviews' }
+            },
+            {
+                name: 'Maximum ancestor depth',
+                desc: 'Number of ancestor links to follow (1–20). Default: 5.',
+                control: { type: 'dropdown', key: 'maxDepth', options: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [String(i + 1), String(i + 1)])) }
+            },
+            {
+                name: 'Excluded folders',
+                desc: 'One vault-relative folder per line. Includes subfolders; excluded notes are not traversed.',
+                control: { type: 'textarea', key: 'excludedFolders', rows: 4 }
+            }
+        ];
+    }
+
+    getControlValue(key: string): unknown {
+        if (key === 'excludedFolders') return this.plugin.settings.excludedFolders.join('\n');
+        if (key === 'maxDepth') return String(this.plugin.settings.maxDepth);
+        return this.plugin.settings[key as keyof Settings];
+    }
+
+    async setControlValue(key: string, value: unknown): Promise<void> {
+        if (!Object.prototype.hasOwnProperty.call(defaults, key)) return;
+        const next = key === 'excludedFolders' && typeof value === 'string' ? value.split('\n')
+            : key === 'maxDepth' ? Number(value) : value;
+        await this.plugin.updateSettings({ ...this.plugin.settings, [key]: next });
+    }
+
     display() {
-        this.containerEl.empty();
-        new Setting(this.containerEl).setName('Show navigation trail')
-            .setDesc('Remember your route in each tab for this session. Clicking an earlier note trims the trail. Turning this off clears it.')
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.showSessionTrail).onChange(async (value) => {
-            await this.plugin.updateSettings({ ...this.plugin.settings, showSessionTrail: value });
-        }));
-        new Setting(this.containerEl).setName('Show inferred paths')
-            .setDesc('Show paths calculated from note links. Turn off to use only your navigation trail; link analysis is paused.')
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.showInferredPaths).onChange(async (value) => {
-            await this.plugin.updateSettings({ ...this.plugin.settings, showInferredPaths: value });
-        }));
-        new Setting(this.containerEl).setName('Use local heuristics')
-            .setDesc('On: infer likely parents from link context. Off: follow all incoming links. Depth, exclusions and safety limits apply in both modes.')
-            .addToggle(toggle => toggle.setValue(this.plugin.settings.useHeuristics).onChange(async (value) => {
-            await this.plugin.updateSettings({ ...this.plugin.settings, useHeuristics: value });
-        }));
-        const rankingToggles = [
-            ['penalizeReciprocal', 'Penalize reciprocal links', 'Prefer routes with fewer links that point both ways.'],
-            ['penalizeDetours', 'Penalize detours', 'Prefer direct routes over longer routes with shortcut links.'],
-            ['rankOverviews', 'Rank likely overview notes', 'Favor starting notes with broad outward links. Suggested starts may have earlier links.']
-        ] as const;
-        for (const [key, name, description] of rankingToggles) {
-            new Setting(this.containerEl).setName(name).setDesc(description + ' Applies in both link modes.')
-                .addToggle(toggle => toggle.setValue(this.plugin.settings[key]).onChange(async (value) => {
-                await this.plugin.updateSettings({ ...this.plugin.settings, [key]: value });
-            }));
+        // Newer hosts render/search definitions; older hosts keep the same controls.
+        if (typeof PluginSettingTab.prototype.getSettingDefinitions === 'function') {
+            super.display();
+            return;
         }
-        new Setting(this.containerEl).setName('Maximum ancestor depth')
-            .setDesc('Number of ancestor links to follow (1–20). Default: 5.')
-            .addDropdown(dropdown => {
-            for (let i = 1; i <= 20; i++)
-                dropdown.addOption(String(i), String(i));
-            dropdown.setValue(String(this.plugin.settings.maxDepth)).onChange(async (value) => {
-                await this.plugin.updateSettings({ ...this.plugin.settings, maxDepth: Number(value) });
-            });
-        });
-        new Setting(this.containerEl).setName('Excluded folders')
-            .setDesc('One vault-relative folder per line. Includes subfolders; excluded notes are not traversed.')
-            .addTextArea(text => text.setValue(this.plugin.settings.excludedFolders.join('\n')).onChange(async (value) => {
-            await this.plugin.updateSettings({ ...this.plugin.settings, excludedFolders: value.split('\n') });
-        }));
+        this.containerEl.empty();
+        for (const definition of this.getSettingDefinitions()) {
+            const setting = new Setting(this.containerEl).setName(definition.name).setDesc(definition.desc ?? '');
+            const control = definition.control;
+            const value = this.getControlValue(control.key);
+            if (control.type === 'toggle') {
+                setting.addToggle(toggle => toggle.setValue(Boolean(value)).onChange(next => this.setControlValue(control.key, next)));
+            } else if (control.type === 'dropdown') {
+                setting.addDropdown(dropdown => dropdown.addOptions(control.options).setValue(String(value)).onChange(next => this.setControlValue(control.key, next)));
+            } else if (control.type === 'textarea') {
+                setting.addTextArea(text => text.setValue(String(value)).onChange(next => this.setControlValue(control.key, next)));
+            }
+        }
     }
 }
